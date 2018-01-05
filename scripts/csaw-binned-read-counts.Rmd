@@ -1,7 +1,6 @@
 ---
 title: "Compute read counts per 50 bp window"
 author: "Vanessa Dumeaux"
-date: "`r Sys.Date()`"
 output: rmarkdown::html_notebook
 ---
 This script was used to compute count data for 50bp windows using the bioconductor csaw package.
@@ -26,10 +25,9 @@ standard.chr <- paste0("chr", c(1:22, "X", "Y"))
 blacklist <- rtracklayer::import("/home/vanessa.d/repositories/chilin/db/hg19/hg19-blacklist.bed", format = "BED")
 
 sample.table <- readRDS("/home/vanessa.d/repositories/mader/chipseq-ICI/data/sample.table.rds")
-```
 
 # Estimate fragment size
-```{r, eval=FALSE}
+
 out <- mclapply(sample.table$bamReads, function(b){
   ret <- getPESizes(b)
   return(ret)}, mc.cores = 60)
