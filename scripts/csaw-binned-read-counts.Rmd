@@ -1,0 +1,69 @@
+---
+title: "Compute read counts per 50 bp window"
+author: "Vanessa Dumeaux"
+date: "`r Sys.Date()`"
+output: rmarkdown::html_notebook
+---
+This script was used to compute count data for 50bp windows using the bioconductor csaw package.
+Computed count data for each sample were deposited in GEO
+
+```{r, eval=FALSE}
+library(rprojroot)
+root<-rprojroot::find_root(".git/index")
+
+setwd(file.path(root,"scripts"))
+
+library(csaw)
+library(DESeq2)
+library(doParallel)
+options(mc.preschedule=FALSE)
+ncores <- getOption("mc.cores", default=80)
+registerDoParallel(cores=ncores)
+library(BiocParallel)
+register(DoparParam())
+
+standard.chr <- paste0("chr", c(1:22, "X", "Y"))
+blacklist <- rtracklayer::import("/home/vanessa.d/repositories/chilin/db/hg19/hg19-blacklist.bed", format = "BED")
+
+sample.table <- readRDS("/home/vanessa.d/repositories/mader/chipseq-ICI/data/sample.table.rds")
+```
+
+# Estimate fragment size
+```{r, eval=FALSE}
+out <- mclapply(sample.table$bamReads, function(b){
+  ret <- getPESizes(b)
+  return(ret)}, mc.cores = 60)
+
+frag.sizes <- unlist(mclapply(out, "[", "sizes", mc.cores=60)) 
+frag.sizes <- frag.sizes[frag.sizes<=600]
+median(frag.sizes)
+# [1] 178
+
+param <- readParam(minq=20, discard=blacklist, restrict=standard.chr, dedup=FALSE, BPPARAM = bpparam(), pe="both", max.frag=600)
+
+win.data <- windowCounts(sample.table$bamReads, ext = 178, param = param)
+
+bins <- windowCounts(sample.table$bamReads, bin=TRUE, width=2000, param=param)
+
+split.filterWindow <- function(wdata, bdata){
+  half <- round(ncol(wdata)/2)
+  n <- ncol(wdata)
+  ret.1 <- filterWindows(wdata[, 1:half], bdata[,1:half])
+  ret.2 <- filterWindows(wdata[, (half+1):n], bdata[, (half+1):n])
+  ret <- list()
+  for (i in names(ret.1)){
+    ret[[i]] <- apply(cbind(ret.1[[i]], ret.2[[i]]), 1, mean)}
+  return(ret)
+} 
+
+filter.stat <- list()
+filter.stat <- split.filterWindow(win.data, bins)
+
+min.fc <- 4
+keep <- filter.stat$filter > log2(min.fc)
+
+filtered.data <- list()
+filtered.data <- win.data[keep,]
+saveRDS(filtered.data, "../../data/csaw/chipseq/filtered.data.rds")
+
+```
