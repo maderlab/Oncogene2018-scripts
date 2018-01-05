@@ -1,0 +1,104 @@
+---
+title: "ERE analysis"
+author: "Vanessa Dumeaux"
+date: "1/5/2018"
+output: html_document
+---
+
+```{r, eval=FALSE}
+library(rprojroot)
+root<-rprojroot::find_root(".git/index")
+
+setwd(file.path(root,"scripts/"))
+
+library(rtracklayer)
+library(csaw)
+library(edgeR)
+
+### import ERE regions
+ere <- read.table("../../data/EREs hg19.txt", sep = "\t", 
+                  header = T, stringsAsFactors = FALSE)
+colnames(ere) <- ifelse(colnames(ere)=="Chrom.", "chrom", colnames(ere))
+ere_hg19 <- makeGRangesFromDataFrame(ere)
+
+### import count data and sample table
+filtered.data <- readRDS("../../data/csaw/chipseq/filtered.data.rds")
+sample.table <- readRDS("../../data/sample.table.rds")
+
+colData(filtered.data) <- cbind(colData(filtered.data), sample.table)
+
+### find 50bp windows that contain ERE
+olap <- findOverlaps(ere_hg19, rowRanges(filtered.data), type="within")
+olap
+
+### adjust count matrix
+adjc <- log2(assay(filtered.data) + 0.5)
+colnames(adjc) <-sample.table$SampleID
+
+offsets <- normOffsets(filtered.data, type="scaling")
+
+norm.adjc <- adjc - offsets/log(2)
+
+rownames(norm.adjc) <- as.character(rowRanges(filtered.data))
+colnames(norm.adjc) <- sample.table$SampleID
+
+### Draw heatmaps
+library(devtools)
+install_github("vdumeaux/mixtR")
+source("../src/bresat.R")
+
+cl1 <- sample.table
+sel <- olap@to
+
+pdf("output/csaw-heatmap-ere.pdf", width=20, height=20)
+exprs <- norm.adjc[sel, cl1$timepoint=="t30" & !cl1$Factor == "SUMO"]
+cl <- cl1[cl1$timepoint=="t30" & !cl1$Factor == "SUMO", ]
+bs <- sig.ranksum(exprs, ns=1:nrow(exprs), full.return = TRUE)
+plot.new()
+mixtR:::heatmap.simple(bs$dat, clinical=cl[bs$pat.order, c("condColors", "timeColors", "factorColors")], 
+                       row.clust = FALSE, col.clust = FALSE, title = paste0("t30, ERE - n=", nrow(bs$dat)))
+
+exprs <- norm.adjc[sel, cl1$timepoint=="t30" & cl1$Factor == "SUMO"]
+cl <- cl1[cl1$timepoint=="t30" & cl1$Factor == "SUMO", ]
+bs <- sig.ranksum(exprs, ns=1:nrow(exprs), full.return = TRUE)
+plot.new()
+mixtR:::heatmap.simple(bs$dat, clinical=cl[bs$pat.order, c("condColors", "timeColors", "factorColors")],
+                       row.clust = FALSE, col.clust = FALSE, title = paste0("t30, ERE - n=", nrow(bs$dat)))
+
+exprs <- norm.adjc[sel, cl1$Condition=="ICI" & !cl1$Factor == "SUMO"]
+cl <- cl1[cl1$Condition=="ICI" & !cl1$Factor == "SUMO", ]
+bs <- sig.ranksum(exprs, ns=1:nrow(exprs), full.return = TRUE)
+plot.new()
+mixtR:::heatmap.simple(bs$dat, clinical=cl[bs$pat.order, c("condColors", "timeColors", "factorColors")], 
+                       row.clust = FALSE, col.clust = FALSE, title = paste0("ICI, ERE - n=", nrow(bs$dat)))
+
+dev.off()
+
+#### differential analysis for ere regions between SUMO ICI vs SUMO vehicule at t30
+
+cl$Condition <- factor(as.character(cl$Condition))
+cl$Condition <- relevel(cl$Condition, ref="EtOH")
+cl$timepoint <- relevel(factor(cl$timepoint), ref = "t30")
+
+design <- model.matrix(~ cl$Condition)
+
+y <- asDGEList(filtered.data[sel, cl1$timepoint=="t30" & cl1$Factor == "SUMO"])
+y$offset <- offsets[cl1$timepoint=="t30" & cl1$Factor == "SUMO"]
+
+y <- estimateDisp(y, design)
+fit <- glmQLFit(y, design, robust = T)
+
+SUMO.ICI <- edgeR::glmQLFTest(fit, coef = 2)
+
+ere.csaw.regions <- cbind(as.character(rowRanges(filtered.data)[olap@to]),
+                          as.character(ere_hg19)[olap@from])
+colnames(ere.csaw.regions) <- c("csaw-window", "ere-motif")
+
+colnames(SUMO.ICI$table) <- paste0("SUMO-t30-ICIvsEtOH-", colnames(SUMO.ICI$table))
+
+ere.csaw.regions <- cbind(ere.csaw.regions, SUMO.ICI$table)
+
+write.table(ere.csaw.regions, file="output/ere-sumo-t30Stat-regions.txt", row.names=FALSE, quote=FALSE, sep="\t")
+ 
+```
+
