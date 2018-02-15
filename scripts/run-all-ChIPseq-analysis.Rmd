@@ -1,0 +1,242 @@
+---
+title: "ChIP-seq analysis"
+author: "Vanessa Dumeaux"
+output: rmarkdown::html_notebook
+---
+
+# 1. Load raw count data
+We computed count data for 50bp windows using the bioconductor csaw package.
+
+Csaw uses sliding windows to count fragments for a set of libraries. For more details about the csaw package, please see the reference below:
+
+    A. T. Lun and G. K. Smyth. csaw: a Bioconductor package for differential binding analysis of ChIP-seq data using sliding windows. Nucleic Acids Res., 44(5):e45, Mar 2016
+
+```{r, message=FALSE}
+library(csaw)
+```
+  
+  
+Raw count data for each sample were deposited in GEO [here](https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE108883) and can be loaded as follow
+```{r}
+filtered.data <- readRDS("../data/filtered.data.rds")
+head(assay(filtered.data))
+head(data.frame(colData(filtered.data)))
+```
+
+  
+The script below can be used to recompute filtered.data. This assumes that a vector of file paths to sorted and indexed BAM files is provided in `bam.files`.
+```{r, eval=FALSE}
+
+library(doParallel)
+options(mc.preschedule=FALSE)
+ncores <- getOption("mc.cores", default=80)
+registerDoParallel(cores=ncores)
+library(BiocParallel)
+register(DoparParam())
+
+## count reads into windows excluding non-standard chromosomes and blacklisted
+## regions from ENCODE
+
+standard.chr <- paste0("chr", c(1:22, "X", "Y"))
+
+download.file("https://www.encodeproject.org/files/ENCFF001TDO/@@download/ENCFF001TDO.bed.gz", 
+              destfile = "../../data/hg19-blacklist.bed.gz")
+
+blacklist <- rtracklayer::import("../../data/hg19-blacklist.bed.gz", format = "BED")
+
+## Min quality read = 20 and Maximum fragment size = 600
+param <- readParam(minq=20, discard=blacklist, restrict=standard.chr, dedup=FALSE, BPPARAM = bpparam(), pe="both", max.frag=600)
+
+win.data <- windowCounts(bam.files, param = param)
+
+## Estimate the degree of background enrichment by counting reads into large bins across the genome
+bins <- windowCounts(bam.files, bin=TRUE, width=2000, param=param)
+
+## The filterWindows function returns the increase in the abundance of
+## each window over the global background. Windows are filtered by setting some minimum
+## threshold on this increase. The aim is to eliminate the majority of uninteresting windows
+## prior to further analysis. Here, a fold change of 4 is necessary for a window to be 
+## considered as containing a binding site. 
+
+## small function to split computation into two
+split.filterWindow <- function(wdata, bdata){
+  half <- round(ncol(wdata)/2)
+  n <- ncol(wdata)
+  ret.1 <- filterWindows(wdata[, 1:half], bdata[,1:half])
+  ret.2 <- filterWindows(wdata[, (half+1):n], bdata[, (half+1):n])
+  ret <- list()
+  for (i in names(ret.1)){
+    ret[[i]] <- apply(cbind(ret.1[[i]], ret.2[[i]]), 1, mean)}
+  return(ret)
+} 
+
+filter.stat <- list()
+filter.stat <- split.filterWindow(win.data, bins)
+
+min.fc <- 4
+keep <- filter.stat$filter > log2(min.fc)
+
+filtered.data <- list()
+filtered.data <- win.data[keep,]
+saveRDS(filtered.data, "../data/filtered.data.rds")
+```
+
+# 2. Exploratory MA plot
+```{r}
+### First load precomputed stat of abundances for each window
+filter.stat <- readRDS("../data/filter.stat.rds")
+
+### only keep windows of interest
+min.fc <- 4
+keep <- filter.stat$filter > log2(min.fc)
+win.ab <- filter.stat$abundances[keep] 
+
+## log-transform raw count
+adjc <- log2(assay(filtered.data) + 0.5)
+colnames(adjc) <- colData(filtered.data)$SampleID
+
+## plot MA plot
+par(mfrow=c(3,2))
+for(i in 2:ncol(adjc)){
+  logfc <- adjc[,1] - adjc[,i]
+  smoothScatter(win.ab, logfc, ylim=c(-4,4), xlim=c(0,6), xlab="Average abundance", ylab="Log-fold change", main=paste(colnames(adjc)[1],colnames(adjc)[i], sep=" vs "), cex=0.4)
+  abline(h=0, col="green")
+}
+```
+
+# 3. TMM normalization and MA plots after normalization
+```{r}
+offsets <- normOffsets(filtered.data)
+range(offsets)
+colData(filtered.data)$SampleID[which.min(offsets)]
+colData(filtered.data)$SampleID[which.max(offsets)]
+
+#Viz MA on normalized data
+norm.adjc <- adjc - offsets/log(2)
+rownames(norm.adjc) <- as.character(rowRanges(filtered.data))
+colnames(norm.adjc) <- colData(filtered.data)$SampleID
+
+par(mfrow=c(3,2))
+for(i in 2:ncol(norm.adjc)){
+  norm.fc <- norm.adjc[,1]-norm.adjc[,i]
+  smoothScatter(win.ab, norm.fc, ylim=c(-6, 6), xlim=c(0, 5),main=paste(colnames(adjc)[1], colnames(adjc)[i], sep=" vs "),
+                xlab="Average abundance", ylab="Log-fold change")
+  abline(h=0, col="green")
+}
+```
+
+
+# 4. Exploratory PCA plot
+```{r}
+library(limma)
+sample.table <- colData(filtered.data)
+
+pca <- prcomp(t(norm.adjc), scale. = TRUE)
+plot(pca$x[, 1], pca$x[, 2], pch = ".", xlab = "PC1", ylab = "PC2")
+text(pca$x[, 1], pca$x[, 2], labels = colnames(norm.adjc), col=c("red", "blue", "green")[as.integer(factor(sample.table$Condition))])
+
+
+```
+
+# 5. ERE analysis
+
+##### + Import ERE regions coordinates
+```{r, message=FALSE}
+ere <- read.table("../data/EREs.hg19.txt", sep = "\t", 
+                  header = T, stringsAsFactors = FALSE)
+colnames(ere) <- ifelse(colnames(ere)=="Chrom.", "chrom", colnames(ere))
+ere_hg19 <- makeGRangesFromDataFrame(ere)
+```
+
+##### + Select 50bp windows that contain ERE
+```{r}
+olap <- findOverlaps(ere_hg19, rowRanges(filtered.data), type="within")
+olap
+```
+
+##### + Normalized and log-transform raw count matrix and select regions containing an ERE
+```{r}
+
+ere.sel <- olap@to
+norm.adjc <- norm.adjc[ere.sel,]
+```
+
+##### + Draw heatmaps of normalized counts for regions containing an ERE (Figure S3C)
+```{r, message=FALSE}
+
+devtools::install_github("vdumeaux/mixtR")
+
+source("../src/bresat.R")
+
+sample.table <- data.frame(colData(filtered.data))
+## Compare ERa binding at timepoint 30 mins after treatment with estradiol, fluvestrant and vehicule
+exprs <- norm.adjc[, sample.table$timepoint=="t30" & !sample.table$Factor == "SUMO"]
+cl <- sample.table[sample.table$timepoint=="t30" & !sample.table$Factor == "SUMO", ]
+bs <- sig.ranksum(exprs, ns=1:nrow(exprs), full.return = TRUE)
+plot.new()
+mixtR:::heatmap.simple(bs$dat, 
+                       clinical=cl[bs$pat.order, c("condColors", "timeColors", "factorColors")], 
+                       row.clust = FALSE, col.clust = FALSE, 
+                       title = paste0("t30, ERE - n=", nrow(bs$dat)))
+
+## Compare ERa binding after treatment with fluvestrant at timepoint 30mins and 180mins 
+exprs <- norm.adjc[, sample.table$Condition=="ICI" & !sample.table$Factor == "SUMO"]
+cl <- sample.table[sample.table$Condition=="ICI" & !sample.table$Factor == "SUMO", ]
+bs <- sig.ranksum(exprs, ns=1:nrow(exprs), full.return = TRUE)
+plot.new()
+mixtR:::heatmap.simple(bs$dat, 
+                       clinical=cl[bs$pat.order, c("condColors", "timeColors", "factorColors")], 
+                       row.clust = FALSE, col.clust = FALSE, 
+                       title = paste0("ICI, ERE - n=", nrow(bs$dat)))
+
+```
+
+# 6. Study overlap peaks ICI-30 and SUMO
+```{r}
+peaks <- read.table("../data/peaks-overlap.txt", sep="\t", header = T)
+head(peaks)
+peaks$idx <- 1:nrow(peaks)
+
+library(ggplot2)
+
+q <- ggplot(peaks, aes(x = idx, y=qvalue..log10))+
+  theme_bw() +
+  #ggtitle("")+
+  ylab("-log10 q-value")+
+  geom_point()
+
+print(q)
+
+### show proportion of overlap by quantiles of top peaks
+q <- quantile(peaks$qvalue..log10, probs = c(0.95, 0.90, 0.80, 0.50, 0.25, 0))
+
+a <- unlist(lapply(q, function(x){
+  tab <- vennCounts(peaks[peaks$qvalue..log10 > x, c(5,8)])
+  prop <- tab[4,3]/tab[2,3]
+  return(prop)
+  }))
+
+b <- unlist(lapply(q, function(x){
+  tab <- vennCounts(peaks[peaks$qvalue..log10 > x, c(6,8)])
+  prop <- tab[4,3]/tab[2,3]
+  return(prop)
+  }))
+
+prop <- c(a, b)
+quant.labels <- c("top 5%", "top 10%", "top 20%", "top 50%", "top 75%", "all")
+q.labels <- factor(rep(quant.labels, 2), levels=quant.labels, ordered = TRUE)
+quant <- c(names(a), names(b))
+exp <- c(rep("V.30.SUMO", length(a)),
+         rep("ICI.30.SUMO", length(b)))
+mydata <- data.frame(value = prop,
+                     quant = quant,
+                     q.labels = q.labels,
+                     exp = exp)
+
+p <-ggplot(mydata, aes(q.labels, value))+
+  geom_bar(stat = "identity", aes(fill = exp), position = "dodge") +
+  xlab("top ERa-ICI-30 min peaks (ordered by -log10 q-value)") + ylab("Proportion of overlap") +
+  ggtitle("Overlap with ERa ICI 30min peaks") +
+  theme_bw()
+
+p
