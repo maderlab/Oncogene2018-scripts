@@ -179,7 +179,7 @@ mixtR:::heatmap.simple(bs$dat,
 
 ```
 
-# Analyse MACS2
+#  6. Analyse MACS2
 We also investigated peaks computed by [MACS2](https://github.com/taoliu/MACS) processing the output using DiffBind R package (ref: [Stark R and Brown G (2011). DiffBind: differential binding analysis of ChIP-Seq peak data.](http://bioconductor.org/packages/release/bioc/vignettes/DiffBind/inst/doc/DiffBind.pdf).)
 
 We precomputed DBA object to read in peaksets output from MACS2. Please refer to the Diffbind R package to format `sample.diffbind` that provides paths to the peak calls from MACS2.
