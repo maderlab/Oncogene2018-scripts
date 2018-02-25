@@ -179,9 +179,50 @@ mixtR:::heatmap.simple(bs$dat,
 
 ```
 
-# 6. Study overlap peaks ICI-30 and SUMO
+# Analyse MACS2
+We also investigated peaks computed by [MACS2](https://github.com/taoliu/MACS) processing the output using DiffBind R package (ref: [Stark R and Brown G (2011). DiffBind: differential binding analysis of ChIP-Seq peak data.](http://bioconductor.org/packages/release/bioc/vignettes/DiffBind/inst/doc/DiffBind.pdf).)
+
+We precomputed DBA object to read in peaksets output from MACS2. Please refer to the Diffbind R package to format `sample.diffbind` that provides paths to the peak calls from MACS2.
+
+```{r, message=FALSE}
+
+library(GenomicRanges)
+library(DiffBind)
+
+# t30t180.dba <- dba(sampleSheet=sample.diffbind[!sample.diffbind$Factor=="SUMO",])
+# sumo.dba <- dba(sampleSheet=sample.diffbind[sample.diffbind$Factor=="SUMO",])
+
+```
+##### + Exploratory plots of ChIP-seq peaks
+###### Occupancy plot
 ```{r}
-peaks <- read.table("../data/peaks-overlap.txt", sep="\t", header = T)
+t30t180.dba <- readRDS("../data/peaks/t30t180.dba.rds")
+plot(t30t180.dba)
+```
+###### PCA plot of log2-normalized counts
+```{r}
+# t30t180.dba.counts <- dba.count(t30t180.dba)
+t30t180.dba.counts <- readRDS("../data/peaks/t30t180.dba.counts.rds")
+dba.plotPCA(t30t180.dba.counts,attributes = c(DBA_CONDITION,DBA_TREATMENT), dotSize = 0.8)
+```
+
+##### + Exploratory plots of ChIP-seq SUMO
+
+###### Occupancy plot ChIPseq SUMO
+```{r}
+sumo.dba <- readRDS("../data/peaks/sumo.dba.rds")
+plot(sumo.dba)
+```
+###### PCA plot of log2-normalized counts
+```{r}
+# sumo.dba.counts <- dba.count(sumo.dba)
+sumo.dba.counts <- readRDS("../data/peaks/sumo.dba.counts.rds")
+dba.plotPCA(sumo.dba.counts,attributes = c(DBA_CONDITION,DBA_TREATMENT), dotSize = 0.8)
+```
+
+# 6. Study overlap between ChIP-seq ERa and SUMO peaks
+```{r}
+peaks <- read.table("../data/peaks/peaks-overlap.txt", sep="\t", header = T)
 head(peaks)
 peaks$idx <- 1:nrow(peaks)
 
@@ -233,7 +274,7 @@ p <-ggplot(mydata, aes(q.labels, value))+
 p
 ```
 
-### Select top 5% and plot heatmap of normalized counts in SUMO experiments 30 mins
+### Select top 5% and plot heatmap of TMM-normalized counts in SUMO experiments 30 mins
 ```{r, message=FALSE}
 top.peaks <- peaks[peaks$qvalue..log10 > q[1], ]
 
@@ -244,15 +285,14 @@ sel.coord <- makeGRangesFromDataFrame(top.peaks,
 
 
 # load precomputed counts for top5% ICI 30 mins peaks
-regcts <- readRDS("../data/counts-toppeaks-ICI-30.rds")
+regcts <- readRDS("../data/peaks/counts-toppeaks-ICI-30.rds")
 
 # this object was computed as described below. This assumes that a vector of file paths to sorted and indexed BAM files is provided in `bam.files`.
 # regcts <- regionCounts(bam.files,regions=sel.coord, param=param)
 # rownames(regcts) <- as.character(top.peaks$names)
 
-regcts.sel <- regcts[top.peaks$ICI.30.SUMO==1,]
 library(edgeR)
-exprs <- cpm(assay(regcts.sel), lib.size=offsets)
+exprs <- cpm(assay(regcts), lib.size=offsets)
 
 ## Compare ERa binding after treatment with fluvestrant at timepoint 30mins and 180mins 
 exprs <- exprs[, sample.table$timepoint=="t30" & sample.table$Factor == "SUMO"]
@@ -268,46 +308,3 @@ mixtR:::heatmap.simple(bs$dat,
 
 ```
 
-# Analyse MACS2
-We also investigated peaks computed by [MACS2](https://github.com/taoliu/MACS) processing the output using DiffBind R package (ref: [Stark R and Brown G (2011). DiffBind: differential binding analysis of ChIP-Seq peak data.](http://bioconductor.org/packages/release/bioc/vignettes/DiffBind/inst/doc/DiffBind.pdf).)
-
-We precomputed DBA object to read in peaksets output from MACS2 as follow. Please refer to the Diffbind R package to format `sample-table.csv` that provides paths to the peak calls from MACS2.
-
-```{r, message=FALSE}
-
-library(GenomicRanges)
-library(DiffBind)
-
-##### add peak calling files
-# sumo.dba <- dba(sampleSheet=sample.diffbind[sample.diffbind$Factor=="SUMO",-6])
-# t30t180.dba <- dba(sampleSheet=sample.diffbind[!sample.diffbind$Factor=="SUMO",])
-
-# t30t180.dba.counts <- dba.count(t30t180.dba)
-# sumo.dba.counts <- dba.count(sumo.dba)
-```
-## ChIP-seq ERa
-### Occupancy plot
-```{r}
-t30t180.dba <- readRDS("../data/peaks/t30t180.dba.rds")
-plot(t30t180.dba)
-```
-### PCA plot of log2-normalized counts
-```{r}
-# t30t180.dba.counts <- dba.count(t30t180.dba)
-t30t180.dba.counts <- readRDS("../data/peaks/t30t180.dba.counts.rds")
-dba.plotPCA(t30t180.dba.counts,attributes = c(DBA_CONDITION,DBA_TREATMENT), dotSize = 0.8)
-```
-
-## ChIP-seq SUMO
-
-### Occupancy plot ChIPseq SUMO
-```{r}
-sumo.dba <- readRDS("../data/peaks/sumo.dba.rds")
-plot(sumo.dba)
-```
-### PCA plot of log2-normalized counts
-```{r}
-# sumo.dba.counts <- dba.count(sumo.dba)
-sumo.dba.counts <- readRDS("../data/peaks/sumo.dba.counts.rds")
-dba.plotPCA(sumo.dba.counts,attributes = c(DBA_CONDITION,DBA_TREATMENT), dotSize = 0.8)
-```
