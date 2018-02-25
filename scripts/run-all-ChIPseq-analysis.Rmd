@@ -79,17 +79,16 @@ keep <- filter.stat$filter > log2(min.fc)
 filtered.data <- list()
 filtered.data <- win.data[keep,]
 saveRDS(filtered.data, "../data/filtered.data.rds")
+
+win.ab <- filter.stat$abundances[keep] 
+saveRDS(win.ab, "../data/win.ab.rds")
+
 ```
 
 # 2. Exploratory MA plot
 ```{r}
-### First load precomputed stat of abundances for each window
-filter.stat <- readRDS("../data/filter.stat.rds")
-
-### only keep windows of interest
-min.fc <- 4
-keep <- filter.stat$filter > log2(min.fc)
-win.ab <- filter.stat$abundances[keep] 
+### First load precomputed abundances for each selected window
+win.ab <- readRDS("../data/win.ab.rds")
 
 ## log-transform raw count
 adjc <- log2(assay(filtered.data) + 0.5)
@@ -126,17 +125,6 @@ for(i in 2:ncol(norm.adjc)){
 ```
 
 
-# 4. Exploratory PCA plot
-```{r}
-library(limma)
-sample.table <- colData(filtered.data)
-
-pca <- prcomp(t(norm.adjc), scale. = TRUE)
-plot(pca$x[, 1], pca$x[, 2], pch = ".", xlab = "PC1", ylab = "PC2")
-text(pca$x[, 1], pca$x[, 2], labels = colnames(norm.adjc), col=c("red", "blue", "green")[as.integer(factor(sample.table$Condition))])
-
-
-```
 
 # 5. ERE analysis
 
@@ -207,18 +195,21 @@ q <- ggplot(peaks, aes(x = idx, y=qvalue..log10))+
 
 print(q)
 
-### show proportion of overlap by quantiles of top peaks
+### show proportion of ICI-SUMO overlap by quantiles of top peaks
 q <- quantile(peaks$qvalue..log10, probs = c(0.95, 0.90, 0.80, 0.50, 0.25, 0))
 
+peaks$ICI.30.ERa <- 1
+
+library(limma)
 a <- unlist(lapply(q, function(x){
-  tab <- vennCounts(peaks[peaks$qvalue..log10 > x, c(5,8)])
-  prop <- tab[4,3]/tab[2,3]
+  tab <- vennCounts(peaks[peaks$qvalue..log10 > x, colnames(peaks) %in% c("V.30.SUMO","ICI.30.ERa")])
+  prop <- tab[4,3]/(tab[2,3]+tab[4,3])
   return(prop)
   }))
 
 b <- unlist(lapply(q, function(x){
-  tab <- vennCounts(peaks[peaks$qvalue..log10 > x, c(6,8)])
-  prop <- tab[4,3]/tab[2,3]
+  tab <- vennCounts(peaks[peaks$qvalue..log10 > x,colnames(peaks) %in% c("ICI.30.SUMO","ICI.30.ERa")])
+  prop <- tab[4,3]/(tab[2,3]+tab[4,3])
   return(prop)
   }))
 
@@ -240,3 +231,83 @@ p <-ggplot(mydata, aes(q.labels, value))+
   theme_bw()
 
 p
+```
+
+### Select top 5% and plot heatmap of normalized counts in SUMO experiments 30 mins
+```{r, message=FALSE}
+top.peaks <- peaks[peaks$qvalue..log10 > q[1], ]
+
+sel.coord <- makeGRangesFromDataFrame(top.peaks,
+                                      start.field = "starts",
+                                      end.field = "ends")
+
+
+
+# load precomputed counts for top5% ICI 30 mins peaks
+regcts <- readRDS("../data/counts-toppeaks-ICI-30.rds")
+
+# this object was computed as described below. This assumes that a vector of file paths to sorted and indexed BAM files is provided in `bam.files`.
+# regcts <- regionCounts(bam.files,regions=sel.coord, param=param)
+# rownames(regcts) <- as.character(top.peaks$names)
+
+regcts.sel <- regcts[top.peaks$ICI.30.SUMO==1,]
+library(edgeR)
+exprs <- cpm(assay(regcts.sel), lib.size=offsets)
+
+## Compare ERa binding after treatment with fluvestrant at timepoint 30mins and 180mins 
+exprs <- exprs[, sample.table$timepoint=="t30" & sample.table$Factor == "SUMO"]
+cl <- sample.table[sample.table$timepoint=="t30" & sample.table$Factor == "SUMO", ]
+bs <- sig.ranksum(exprs, ns=1:nrow(exprs), full.return = TRUE)
+plot.new()
+mixtR:::heatmap.simple(bs$dat, 
+                       clinical=cl[bs$pat.order, c("condColors"), drop = FALSE], 
+                       row.clust = FALSE, col.clust = FALSE, 
+                       col.labels = sample.table$SampleID[sample.table$timepoint=="t30" & sample.table$Factor == "SUMO"],
+                       title = paste0("SUMO 30 mins- top 5% ICI 30 mins peaks, n=", nrow(bs$dat)))
+
+
+```
+
+# Analyse MACS2
+We also investigated peaks computed by [MACS2](https://github.com/taoliu/MACS) processing the output using DiffBind R package (ref: [Stark R and Brown G (2011). DiffBind: differential binding analysis of ChIP-Seq peak data.](http://bioconductor.org/packages/release/bioc/vignettes/DiffBind/inst/doc/DiffBind.pdf).)
+
+We precomputed DBA object to read in peaksets output from MACS2 as follow. Please refer to the Diffbind R package to format `sample-table.csv` that provides paths to the peak calls from MACS2.
+
+```{r, message=FALSE}
+
+library(GenomicRanges)
+library(DiffBind)
+
+##### add peak calling files
+# sumo.dba <- dba(sampleSheet=sample.diffbind[sample.diffbind$Factor=="SUMO",-6])
+# t30t180.dba <- dba(sampleSheet=sample.diffbind[!sample.diffbind$Factor=="SUMO",])
+
+# t30t180.dba.counts <- dba.count(t30t180.dba)
+# sumo.dba.counts <- dba.count(sumo.dba)
+```
+## ChIP-seq ERa
+### Occupancy plot
+```{r}
+t30t180.dba <- readRDS("../data/peaks/t30t180.dba.rds")
+plot(t30t180.dba)
+```
+### PCA plot of log2-normalized counts
+```{r}
+# t30t180.dba.counts <- dba.count(t30t180.dba)
+t30t180.dba.counts <- readRDS("../data/peaks/t30t180.dba.counts.rds")
+dba.plotPCA(t30t180.dba.counts,attributes = c(DBA_CONDITION,DBA_TREATMENT), dotSize = 0.8)
+```
+
+## ChIP-seq SUMO
+
+### Occupancy plot ChIPseq SUMO
+```{r}
+sumo.dba <- readRDS("../data/peaks/sumo.dba.rds")
+plot(sumo.dba)
+```
+### PCA plot of log2-normalized counts
+```{r}
+# sumo.dba.counts <- dba.count(sumo.dba)
+sumo.dba.counts <- readRDS("../data/peaks/sumo.dba.counts.rds")
+dba.plotPCA(sumo.dba.counts,attributes = c(DBA_CONDITION,DBA_TREATMENT), dotSize = 0.8)
+```
