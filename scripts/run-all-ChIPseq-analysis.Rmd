@@ -203,7 +203,7 @@ plot(t30t180.dba)
 ```{r}
 # t30t180.dba.counts <- dba.count(t30t180.dba)
 t30t180.dba.counts <- readRDS("../data/peaks/t30t180.dba.counts.rds")
-dba.plotPCA(t30t180.dba.counts,attributes = c(DBA_CONDITION,DBA_TREATMENT), dotSize = 0.8)
+dba.plotPCA(t30t180.dba.counts,attributes = c(DBA_CONDITION,DBA_TREATMENT), label = DBA_FACTOR, dotSize = 0.8)
 ```
 
 ##### + Exploratory plots of ChIP-seq SUMO
@@ -217,7 +217,7 @@ plot(sumo.dba)
 ```{r}
 # sumo.dba.counts <- dba.count(sumo.dba)
 sumo.dba.counts <- readRDS("../data/peaks/sumo.dba.counts.rds")
-dba.plotPCA(sumo.dba.counts,attributes = c(DBA_CONDITION,DBA_TREATMENT), dotSize = 0.8)
+dba.plotPCA(sumo.dba.counts,attributes = c(DBA_CONDITION,DBA_TREATMENT), label = DBA_ID, dotSize = 0.8)
 ```
 
 # 6. Study overlap between ChIP-seq ERa and SUMO peaks
