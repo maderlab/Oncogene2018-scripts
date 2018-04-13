@@ -306,5 +306,12 @@ mixtR:::heatmap.simple(bs$dat,
                        title = paste0("SUMO 30 mins- top 5% ICI 30 mins peaks, n=", nrow(bs$dat)))
 
 
+## peaks whose binding is postively correlated with sample ordering displayed in the heatmap
+up.peaks <- rownames(exprs)[bs$up]
+str(up.peaks)
+## peaks whose binding is negatively correlated with sample ordering displayed in the heatmap
+dn.peaks <- rownames(exprs)[bs$dn]
+str(dn.peaks)
+
 ```
 
