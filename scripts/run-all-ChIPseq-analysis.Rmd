@@ -199,6 +199,11 @@ plotHeatmap -m topERpeaks-chipSUMO-refpoint.gz \
 ```
 
 # 4. Reproducibility of SUMO binding for topER peaks
+```{bash, eval = FALSE}
+multiBigwigSummary BED-file -b V_30_SUMO_N1.norm.bw V_30_SUMO_N2.norm.bw ICI_30_SUMO_N1.norm.bw ICI_30_SUMO_N2.norm.bw ICI_3h_SUMO_N1.norm.bw ICI_3h_SUMO_N2.norm.bw \
+-out topERpeaks-allSUMO-compare.npz \
+--BED ../../data/top-ERa-peaks --outRawCounts ~/Downloads/topERpeaks-allSUMO-compare.tab
+```
 
 ```{r}
 corr2 <- read.table("~/Downloads/topERpeaks-allSUMO-compare.tab", sep="\t")
@@ -206,16 +211,12 @@ colnames(corr2) <- c("seqnames", "start", "end", "V_30_SUMO_N1", "V_30_SUMO_N2",
                     "ICI_30_SUMO_N1", "ICI_30_SUMO_N2", "ICI_3h_SUMO_N1", "ICI_3h_SUMO_N2")
 head(corr2)
 
-
 p <- ggplot(corr2, aes(x=ICI_30_SUMO_N1, y=ICI_30_SUMO_N2)) +
   geom_point() +
   theme_bw()
 p
-```{r, echo=FALSE}
-pdf("~/Dropbox/mader/Oncogene Traboulsi et al/3rd RESUBMISSION/3-FigureS6D-reproduciility/scatterplot-topERpeaks-SUMOICI30.pdf")
-print(p)
-dev.off()
 ```
+
 ```{r}
 cor.test(corr2$ICI_30_SUMO_N1, corr2$ICI_30_SUMO_N2, method="spearman")
 cor.test(corr2$ICI_30_SUMO_N1, corr2$ICI_30_SUMO_N2)
@@ -228,10 +229,6 @@ p <- ggplot(corr2, aes(x=V_30_SUMO_N1, y=V_30_SUMO_N2)) +
   theme_bw()
 p
 
-pdf("~/Dropbox/mader/Oncogene Traboulsi et al/3rd RESUBMISSION/3-FigureS6D-reproduciility/scatterplot-topERpeaks-SUMOV30.pdf")
-print(p)
-dev.off()
-
 cor.test(corr2$V_30_SUMO_N1, corr2$V_30_SUMO_N2, method="spearman")
 
 cor.test(corr2$V_30_SUMO_N1, corr2$V_30_SUMO_N2)
@@ -242,10 +239,6 @@ p <- ggplot(corr2, aes(x=ICI_3h_SUMO_N1, y=ICI_3h_SUMO_N2)) +
   geom_point() +
   theme_bw()
 p
-
-pdf("~/Dropbox/mader/Oncogene Traboulsi et al/3rd RESUBMISSION/3-FigureS6D-reproduciility/scatterplot-topERpeaks-SUMOICI3h.pdf")
-print(p)
-dev.off()
 
 cor.test(corr2$ICI_3h_SUMO_N1, corr2$ICI_3h_SUMO_N2, method="spearman")
 cor.test(corr2$ICI_3h_SUMO_N1, corr2$ICI_3h_SUMO_N2)
