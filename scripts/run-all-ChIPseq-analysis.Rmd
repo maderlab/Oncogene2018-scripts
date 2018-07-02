@@ -83,6 +83,9 @@ rtracklayer::export.bed(E2ICIpeaks[olap@to,], "../data/E2ICIpeaks-ERE.bed")
 ```
 ##### + Plot tag density heatmap using deepTools2
 Trimmed and sorted bam files were normalized using [deepTools2 version 2.0](https://deeptools.readthedocs.io/en/2.0.0/content/list_of_tools.html)
+Ref:
+[Ramírez, Fidel, Devon P. Ryan, Björn Grüning, Vivek Bhardwaj, Fabian Kilpert, Andreas S. Richter, Steffen Heyne, Friederike Dündar, and Thomas Manke. deepTools2: A next Generation Web Server for Deep-Sequencing Data Analysis. Nucleic Acids Research (2016).](doi:10.1093/nar/gkw257)
+
 ```{bash, eval = FALSE}
 #!/usr/bin/env bash
 # File: batch-bamCoverage.sh
