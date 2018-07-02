@@ -5,3 +5,5 @@
 *.Rproj
 output/
 *.xls
+extra.R
+cnv.mcf7*

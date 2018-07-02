@@ -4,240 +4,135 @@ author: "Vanessa Dumeaux"
 output: rmarkdown::html_notebook
 ---
 
-# 1. Load raw count data
-We computed count data for 50bp windows using the bioconductor csaw package.
+#  1. Unsupervised analysis - MACS2 peaks
+We conducted an unsupervised analysis of peaks computed individually for each sample by [MACS2](https://github.com/taoliu/MACS) using the DiffBind R package 
 
-Csaw uses sliding windows to count fragments for a set of libraries. For more details about the csaw package, please see the reference below:
+Refs: 
 
-    A. T. Lun and G. K. Smyth. csaw: a Bioconductor package for differential binding analysis of ChIP-seq data using sliding windows. Nucleic Acids Res., 44(5):e45, Mar 2016
++ [Stark R and Brown G (2011). DiffBind: differential binding analysis of ChIP-Seq peak data.](http://bioconductor.org/packages/release/bioc/vignettes/DiffBind/inst/doc/DiffBind.pdf)
+
++ [Ross-Innes CS, Stark R, Teschendorff AE, Holmes KA, Ali HR, Dunning MJ, Brown GD, Gojis O, Ellis IO, Green AR, Ali S, Chin S, Palmieri C, Caldas C, Carroll JS (2012). “Differential oestrogen receptor binding is associated with clinical outcome in breast cancer.” Nature, 481,-4.](http://www.nature.com/nature/journal/v481/n7381/full/nature10730.html)
+
+We precomputed the DBA object to read in peaksets output from MACS2. Please refer to the Diffbind R package to format `sample.diffbind` that provides paths to the peak calls from MACS2.
 
 ```{r, message=FALSE}
-library(csaw)
+library(GenomicRanges)
+library(DiffBind)
 ```
-  
-  
-Raw count data for each sample were deposited in GEO [here](https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE108883) and can be loaded as follow
-```{r}
-filtered.data <- readRDS("../data/filtered.data.rds")
-head(assay(filtered.data))
-head(data.frame(colData(filtered.data)))
-```
-
-  
-The script below can be used to recompute filtered.data. This assumes that a vector of file paths to sorted and indexed BAM files is provided in `bam.files`.
 ```{r, eval=FALSE}
+t30.dba <- dba(sampleSheet = sample.table[sample.diffbind$Treatment=="t30" & !sample.diffbind$Factor=="SUMO",])
+t180.dba <- dba(sampleSheet = sample.table[sample.diffbind$Treatment=="t180" & !sample.diffbind$Factor=="SUMO",])
 
-library(doParallel)
-options(mc.preschedule=FALSE)
-ncores <- getOption("mc.cores", default=80)
-registerDoParallel(cores=ncores)
-library(BiocParallel)
-register(DoparParam())
-
-## count reads into windows excluding non-standard chromosomes and blacklisted
-## regions from ENCODE
-
-standard.chr <- paste0("chr", c(1:22, "X", "Y"))
-
-download.file("https://www.encodeproject.org/files/ENCFF001TDO/@@download/ENCFF001TDO.bed.gz", 
-              destfile = "../../data/hg19-blacklist.bed.gz")
-
-blacklist <- rtracklayer::import("../../data/hg19-blacklist.bed.gz", format = "BED")
-
-## Min quality read = 20 and Maximum fragment size = 600
-param <- readParam(minq=20, discard=blacklist, restrict=standard.chr, dedup=FALSE, BPPARAM = bpparam(), pe="both", max.frag=600)
-
-win.data <- windowCounts(bam.files, param = param)
-
-## Estimate the degree of background enrichment by counting reads into large bins across the genome
-bins <- windowCounts(bam.files, bin=TRUE, width=2000, param=param)
-
-## The filterWindows function returns the increase in the abundance of
-## each window over the global background. Windows are filtered by setting some minimum
-## threshold on this increase. The aim is to eliminate the majority of uninteresting windows
-## prior to further analysis. Here, a fold change of 4 is necessary for a window to be 
-## considered as containing a binding site. 
-
-## small function to split computation into two
-split.filterWindow <- function(wdata, bdata){
-  half <- round(ncol(wdata)/2)
-  n <- ncol(wdata)
-  ret.1 <- filterWindows(wdata[, 1:half], bdata[,1:half])
-  ret.2 <- filterWindows(wdata[, (half+1):n], bdata[, (half+1):n])
-  ret <- list()
-  for (i in names(ret.1)){
-    ret[[i]] <- apply(cbind(ret.1[[i]], ret.2[[i]]), 1, mean)}
-  return(ret)
-} 
-
-filter.stat <- list()
-filter.stat <- split.filterWindow(win.data, bins)
-
-min.fc <- 4
-keep <- filter.stat$filter > log2(min.fc)
-
-filtered.data <- list()
-filtered.data <- win.data[keep,]
-saveRDS(filtered.data, "../data/filtered.data.rds")
-
-win.ab <- filter.stat$abundances[keep] 
-saveRDS(win.ab, "../data/win.ab.rds")
-
+t30.dba.counts <- dba.count(t30.dba)
+t180.dba.counts <- dba.count(t180.dba)
 ```
+##### + Exploratory plots of ChIP-seq peaks
 
-# 2. Exploratory MA plot
+###### PCA plot of log2-normalized counts
+```{r, eval=FALSE}
+```
 ```{r}
-### First load precomputed abundances for each selected window
-win.ab <- readRDS("../data/win.ab.rds")
+t30.dba.counts <- readRDS("../data/t30.dba.counts.rds")
+dba.plotPCA(t30.dba.counts,attributes = DBA_CONDITION, dotSize = 0.8)
 
-## log-transform raw count
-adjc <- log2(assay(filtered.data) + 0.5)
-colnames(adjc) <- colData(filtered.data)$SampleID
-
-## plot MA plot
-par(mfrow=c(3,2))
-for(i in 2:ncol(adjc)){
-  logfc <- adjc[,1] - adjc[,i]
-  smoothScatter(win.ab, logfc, ylim=c(-4,4), xlim=c(0,6), xlab="Average abundance", ylab="Log-fold change", main=paste(colnames(adjc)[1],colnames(adjc)[i], sep=" vs "), cex=0.4)
-  abline(h=0, col="green")
-}
+t180.dba.counts <- readRDS("../data/t180.dba.counts.rds")
+dba.plotPCA(t180.dba.counts,attributes = DBA_CONDITION, dotSize = 0.8)
 ```
 
-# 3. TMM normalization and MA plots after normalization
+##### + Exploratory plots of ChIP-seq SUMO
+
+###### PCA plot of log2-normalized counts
+```{r, eval=FALSE}
+sumo.dba <- dba(sampleSheet=sample.diffbind[sample.diffbind$Factor=="SUMO",])
+sumo.dba.counts <- dba.count(sumo.dba)
+```
 ```{r}
-offsets <- normOffsets(filtered.data)
-range(offsets)
-colData(filtered.data)$SampleID[which.min(offsets)]
-colData(filtered.data)$SampleID[which.max(offsets)]
-
-#Viz MA on normalized data
-norm.adjc <- adjc - offsets/log(2)
-rownames(norm.adjc) <- as.character(rowRanges(filtered.data))
-colnames(norm.adjc) <- colData(filtered.data)$SampleID
-
-par(mfrow=c(3,2))
-for(i in 2:ncol(norm.adjc)){
-  norm.fc <- norm.adjc[,1]-norm.adjc[,i]
-  smoothScatter(win.ab, norm.fc, ylim=c(-6, 6), xlim=c(0, 5),main=paste(colnames(adjc)[1], colnames(adjc)[i], sep=" vs "),
-                xlab="Average abundance", ylab="Log-fold change")
-  abline(h=0, col="green")
-}
+sumo.dba.counts <- readRDS("../data/sumo.dba.counts.rds")
+dba.plotPCA(sumo.dba.counts,attributes = c(DBA_CONDITION,DBA_TREATMENT), dotSize = 0.8)
 ```
 
-
-
-# 5. ERE analysis
+# 2. ERE analysis
 
 ##### + Import ERE regions coordinates
 ```{r, message=FALSE}
+library(GenomicRanges)
+
 ere <- read.table("../data/EREs.hg19.txt", sep = "\t", 
                   header = T, stringsAsFactors = FALSE)
 colnames(ere) <- ifelse(colnames(ere)=="Chrom.", "chrom", colnames(ere))
 ere_hg19 <- makeGRangesFromDataFrame(ere)
 ```
 
-##### + Select 50bp windows that contain ERE
+##### + Identify ERa peaks (overlap between E2-30' and ICI-30') that contain ERE
 ```{r}
-olap <- findOverlaps(ere_hg19, rowRanges(filtered.data), type="within")
-olap
-```
-
-##### + Normalized and log-transform raw count matrix and select regions containing an ERE
-```{r}
-
-ere.sel <- olap@to
-norm.adjc <- norm.adjc[ere.sel,]
-```
-
-##### + Draw heatmaps of normalized counts for regions containing an ERE (Figure S3C)
-```{r, message=FALSE}
-
-devtools::install_github("vdumeaux/mixtR")
-
-source("../src/bresat.R")
-
-sample.table <- data.frame(colData(filtered.data))
-## Compare ERa binding at timepoint 30 mins after treatment with estradiol, fluvestrant and vehicule
-exprs <- norm.adjc[, sample.table$timepoint=="t30" & !sample.table$Factor == "SUMO"]
-cl <- sample.table[sample.table$timepoint=="t30" & !sample.table$Factor == "SUMO", ]
-bs <- sig.ranksum(exprs, ns=1:nrow(exprs), full.return = TRUE)
-plot.new()
-mixtR:::heatmap.simple(bs$dat, 
-                       clinical=cl[bs$pat.order, c("condColors", "timeColors", "factorColors")], 
-                       row.clust = FALSE, col.clust = FALSE, 
-                       title = paste0("t30, ERE - n=", nrow(bs$dat)))
-
-## Compare ERa binding after treatment with fluvestrant at timepoint 30mins and 180mins 
-exprs <- norm.adjc[, sample.table$Condition=="ICI" & !sample.table$Factor == "SUMO"]
-cl <- sample.table[sample.table$Condition=="ICI" & !sample.table$Factor == "SUMO", ]
-bs <- sig.ranksum(exprs, ns=1:nrow(exprs), full.return = TRUE)
-plot.new()
-mixtR:::heatmap.simple(bs$dat, 
-                       clinical=cl[bs$pat.order, c("condColors", "timeColors", "factorColors")], 
-                       row.clust = FALSE, col.clust = FALSE, 
-                       title = paste0("ICI, ERE - n=", nrow(bs$dat)))
-
-```
-
-#  6. Analyse MACS2
-We also investigated peaks computed by [MACS2](https://github.com/taoliu/MACS) processing the output using DiffBind R package (ref: [Stark R and Brown G (2011). DiffBind: differential binding analysis of ChIP-Seq peak data.](http://bioconductor.org/packages/release/bioc/vignettes/DiffBind/inst/doc/DiffBind.pdf).)
-
-We precomputed DBA object to read in peaksets output from MACS2. Please refer to the Diffbind R package to format `sample.diffbind` that provides paths to the peak calls from MACS2.
-
-```{r, message=FALSE}
-
-library(GenomicRanges)
-library(DiffBind)
-
-# t30t180.dba <- dba(sampleSheet=sample.diffbind[!sample.diffbind$Factor=="SUMO",])
-# sumo.dba <- dba(sampleSheet=sample.diffbind[sample.diffbind$Factor=="SUMO",])
-
-```
-##### + Exploratory plots of ChIP-seq peaks
-###### Occupancy plot
-```{r}
-t30t180.dba <- readRDS("../data/peaks/t30t180.dba.rds")
-plot(t30t180.dba)
-```
-###### PCA plot of log2-normalized counts
-```{r}
-# t30t180.dba.counts <- dba.count(t30t180.dba)
-t30t180.dba.counts <- readRDS("../data/peaks/t30t180.dba.counts.rds")
-dba.plotPCA(t30t180.dba.counts,attributes = c(DBA_CONDITION,DBA_TREATMENT), label = DBA_ID, dotSize = 0.8)
-```
-
-##### + Exploratory plots of ChIP-seq SUMO
-
-###### Occupancy plot ChIPseq SUMO
-```{r}
-sumo.dba <- readRDS("../data/peaks/sumo.dba.rds")
-plot(sumo.dba)
-```
-###### PCA plot of log2-normalized counts
-```{r}
-# sumo.dba.counts <- dba.count(sumo.dba)
-sumo.dba.counts <- readRDS("../data/peaks/sumo.dba.counts.rds")
-dba.plotPCA(sumo.dba.counts,attributes = c(DBA_CONDITION,DBA_TREATMENT), label = DBA_ID, dotSize = 0.8)
-```
-
-# 6. Study overlap between ChIP-seq ERa and SUMO peaks
-```{r}
-peaks <- read.table("../data/peaks/peaks-overlap.txt", sep="\t", header = T)
+peaks <- read.table("../data/peaks-overlap.txt", sep="\t", header = T)
 head(peaks)
 peaks$idx <- 1:nrow(peaks)
+dim(peaks)
+
+E2ICIpeaks <- GenomicRanges::makeGRangesFromDataFrame(peaks,
+                                      start.field = "starts",
+                                      end.field = "ends")
+E2ICIpeaks
+rtracklayer::export.bed(E2ICIpeaks, "../data/E2ICIpeaks.bed")
+
+olap <- findOverlaps(ere_hg19, E2ICIpeaks, type="within")
+olap
+
+rtracklayer::export.bed(E2ICIpeaks[olap@to,], "../data/E2ICIpeaks-ERE.bed")
+```
+##### + Plot tag density heatmap using deepTools2
+Trimmed and sorted bam files were normalized using [deepTools2 version 2.0](https://deeptools.readthedocs.io/en/2.0.0/content/list_of_tools.html)
+```{bash, eval = FALSE}
+#!/usr/bin/env bash
+# File: batch-bamCoverage.sh
+files=`find . -name "*.sorted.dup.bam"`
+
+for i in $files
+do
+out=`basename "${i%%.sorted.dup.bam}"`
+echo $out
+bamCoverage -b $i -o normalizeTo1/$out.norm.bw \
+--normalizeTo1x 2451960000 --maxFragmentLength 600 -p 40
+done
+```
+`computeMatrix()` calculates scores per regions of interest (ERa peaks containing EREs)  +/- 3kb and `plotHeatmap()` draws the tag density for these regions.
+
+```{bash, eval = FALSE}
+computeMatrix reference-point \
+    -S  V_30_merged.bw E2_30_merged.bw ICI_30_merged.bw ICI_180_merged.bw \
+    -R ~/repositories/mader/chipseq-ICI/data/E2ICIpeaks-ERE.bed \
+    -b 3000 -a 3000 \
+    -o ../../ERpeaksERE-chipER-refpoint.gz \
+    --referencePoint center \
+    -p 40
+```
+```{bash, eval = FALSE}
+plotHeatmap -m ERpeaksERE-chipER-refpoint.gz \
+    -out heatmap-E2ICIpeaks-ERE-chipER-refpoint.pdf \
+    --sortUsingSamples 1 \
+    --colorList 'white,blue'
+```
+
+
+
+# 3. Study overlap between ChIP-seq ERa and SUMO peaks
+
+```{r, message=FALSE}
 
 library(ggplot2)
 
-q <- ggplot(peaks, aes(x = idx, y=qvalue..log10))+
+q.plot <- ggplot(peaks, aes(x = idx, y=qvalue..log10))+
   theme_bw() +
   #ggtitle("")+
   ylab("-log10 q-value")+
   geom_point()
 
-print(q)
+print(q.plot)
 
 ### show proportion of ICI-SUMO overlap by quantiles of top peaks
 q <- quantile(peaks$qvalue..log10, probs = c(0.95, 0.90, 0.80, 0.50, 0.25, 0))
+q
 
 peaks$ICI.30.ERa <- 1
 
@@ -274,44 +169,89 @@ p <-ggplot(mydata, aes(q.labels, value))+
 p
 ```
 
-### Select top 5% and plot heatmap of TMM-normalized counts in SUMO experiments 30 mins
+##### + Select top 5% ERa peaks and draw normalized tag density heatmaps in SUMO experiments
 ```{r, message=FALSE}
-top.peaks <- peaks[peaks$qvalue..log10 > q[1], ]
+top.ERa.peaks <- peaks[peaks$qvalue..log10 > q[1], ]
 
-sel.coord <- makeGRangesFromDataFrame(top.peaks,
+top.ERa.peaks <- GenomicRanges::makeGRangesFromDataFrame(top.ERa.peaks,
                                       start.field = "starts",
                                       end.field = "ends")
+top.ERa.peaks
 
-
-
-# load precomputed counts for top5% ICI 30 mins peaks
-regcts <- readRDS("../data/peaks/counts-toppeaks-ICI-30.rds")
-
-# this object was computed as described below. This assumes that a vector of file paths to sorted and indexed BAM files is provided in `bam.files`.
-# regcts <- regionCounts(bam.files,regions=sel.coord, param=param)
-# rownames(regcts) <- as.character(top.peaks$names)
-
-library(edgeR)
-exprs <- cpm(assay(regcts), lib.size=offsets)
-
-## Compare ERa binding after treatment with fluvestrant at timepoint 30mins and 180mins 
-exprs <- exprs[, sample.table$timepoint=="t30" & sample.table$Factor == "SUMO"]
-cl <- sample.table[sample.table$timepoint=="t30" & sample.table$Factor == "SUMO", ]
-bs <- sig.ranksum(exprs, ns=1:nrow(exprs), full.return = TRUE)
-plot.new()
-mixtR:::heatmap.simple(bs$dat, 
-                       clinical=cl[bs$pat.order, c("condColors"), drop = FALSE], 
-                       row.clust = FALSE, col.clust = FALSE, 
-                       col.labels = sample.table$SampleID[sample.table$timepoint=="t30" & sample.table$Factor == "SUMO"],
-                       title = paste0("SUMO 30 mins- top 5% ICI 30 mins peaks, n=", nrow(bs$dat)))
-
-
-## peaks whose binding is postively correlated with sample ordering displayed in the heatmap
-up.peaks <- rownames(exprs)[bs$up]
-str(up.peaks)
-## peaks whose binding is negatively correlated with sample ordering displayed in the heatmap
-dn.peaks <- rownames(exprs)[bs$dn]
-str(dn.peaks)
-
+rtracklayer::export.bed(top.ERa.peaks, "../data/top-ERa-peaks.bed")
 ```
+
+##### + Plot tag density heatmap using deepTools2
+```{bash, eval = FALSE}
+computeMatrix reference-point \
+    -S V_30_SUMO_merged.bw ICI_30_SUMO_merged.bw ICI_180_SUMO_merged.bw \
+    -R ~/repositories/mader/chipseq-ICI/data/sel.coord.bed \
+    -b 3000 -a 3000 \
+    -o ../../topERpeaks-chipSUMO-refpoint.gz \
+    --referencePoint center \
+    -p 40
+```
+```{bash, eval = FALSE}
+plotHeatmap -m topERpeaks-chipSUMO-refpoint.gz \
+    -out heatmap-topERpeaks-chipSUMO-refpoint.pdf \
+    --sortUsingSamples 1 \
+    --colorList 'white,blue'
+```
+
+# 4. Reproducibility of SUMO binding for topER peaks
+
+```{r}
+corr2 <- read.table("~/Downloads/topERpeaks-allSUMO-compare.tab", sep="\t")
+colnames(corr2) <- c("seqnames", "start", "end", "V_30_SUMO_N1", "V_30_SUMO_N2",
+                    "ICI_30_SUMO_N1", "ICI_30_SUMO_N2", "ICI_3h_SUMO_N1", "ICI_3h_SUMO_N2")
+head(corr2)
+
+
+p <- ggplot(corr2, aes(x=ICI_30_SUMO_N1, y=ICI_30_SUMO_N2)) +
+  geom_point() +
+  theme_bw()
+p
+```{r, echo=FALSE}
+pdf("~/Dropbox/mader/Oncogene Traboulsi et al/3rd RESUBMISSION/3-FigureS6D-reproduciility/scatterplot-topERpeaks-SUMOICI30.pdf")
+print(p)
+dev.off()
+```
+```{r}
+cor.test(corr2$ICI_30_SUMO_N1, corr2$ICI_30_SUMO_N2, method="spearman")
+cor.test(corr2$ICI_30_SUMO_N1, corr2$ICI_30_SUMO_N2)
+```
+
+```{r}
+
+p <- ggplot(corr2, aes(x=V_30_SUMO_N1, y=V_30_SUMO_N2)) +
+  geom_point() +
+  theme_bw()
+p
+
+pdf("~/Dropbox/mader/Oncogene Traboulsi et al/3rd RESUBMISSION/3-FigureS6D-reproduciility/scatterplot-topERpeaks-SUMOV30.pdf")
+print(p)
+dev.off()
+
+cor.test(corr2$V_30_SUMO_N1, corr2$V_30_SUMO_N2, method="spearman")
+
+cor.test(corr2$V_30_SUMO_N1, corr2$V_30_SUMO_N2)
+```
+```{r}
+
+p <- ggplot(corr2, aes(x=ICI_3h_SUMO_N1, y=ICI_3h_SUMO_N2)) +
+  geom_point() +
+  theme_bw()
+p
+
+pdf("~/Dropbox/mader/Oncogene Traboulsi et al/3rd RESUBMISSION/3-FigureS6D-reproduciility/scatterplot-topERpeaks-SUMOICI3h.pdf")
+print(p)
+dev.off()
+
+cor.test(corr2$ICI_3h_SUMO_N1, corr2$ICI_3h_SUMO_N2, method="spearman")
+cor.test(corr2$ICI_3h_SUMO_N1, corr2$ICI_3h_SUMO_N2)
+```
+
+
+
+
 
