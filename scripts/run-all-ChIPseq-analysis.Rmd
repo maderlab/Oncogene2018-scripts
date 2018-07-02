@@ -116,7 +116,7 @@ plotHeatmap -m ERpeaksERE-chipER-refpoint.gz \
 
 
 
-# 3. Study overlap between ChIP-seq ERa and SUMO peaks
+# 3. Study SUMO binding for ChIP-seq ERa peaks
 
 ```{r, message=FALSE}
 
