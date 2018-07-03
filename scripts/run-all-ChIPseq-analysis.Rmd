@@ -13,7 +13,7 @@ Refs:
 
 + [Ross-Innes CS, Stark R, Teschendorff AE, Holmes KA, Ali HR, Dunning MJ, Brown GD, Gojis O, Ellis IO, Green AR, Ali S, Chin S, Palmieri C, Caldas C, Carroll JS (2012). “Differential oestrogen receptor binding is associated with clinical outcome in breast cancer.” Nature, 481,-4.](http://www.nature.com/nature/journal/v481/n7381/full/nature10730.html)
 
-We precomputed the DBA object to read in peaksets output from MACS2. Please refer to the Diffbind R package to format `sample.diffbind` that provides paths to the peak calls from MACS2.
+Please refer to the Diffbind R package to format `sample.diffbind` that provides paths to the peak calls from MACS2. We precomputed the DBA object to read in peaksets output from MACS2 as follow:
 
 ```{r, message=FALSE}
 library(GenomicRanges)
@@ -21,16 +21,17 @@ library(DiffBind)
 ```
 ```{r, eval=FALSE}
 t30.dba <- dba(sampleSheet = sample.table[sample.diffbind$Treatment=="t30" & !sample.diffbind$Factor=="SUMO",])
-t180.dba <- dba(sampleSheet = sample.table[sample.diffbind$Treatment=="t180" & !sample.diffbind$Factor=="SUMO",])
-
 t30.dba.counts <- dba.count(t30.dba)
-t180.dba.counts <- dba.count(t180.dba)
-```
-##### + Exploratory plots of ChIP-seq peaks
 
-###### PCA plot of log2-normalized counts
-```{r, eval=FALSE}
+t180.dba <- dba(sampleSheet = sample.table[sample.diffbind$Treatment=="t180" & !sample.diffbind$Factor=="SUMO",])
+t180.dba.counts <- dba.count(t180.dba)
+
+sumo.dba <- dba(sampleSheet=sample.diffbind[sample.diffbind$Factor=="SUMO",])
+sumo.dba.counts <- dba.count(sumo.dba)
 ```
+##### + PCA plot of log2-normalized counts under peaks 
+
+###### Exploratory plots of ERa peaks stratified on timepoint
 ```{r}
 t30.dba.counts <- readRDS("../data/t30.dba.counts.rds")
 dba.plotPCA(t30.dba.counts,attributes = DBA_CONDITION, dotSize = 0.8)
@@ -39,13 +40,7 @@ t180.dba.counts <- readRDS("../data/t180.dba.counts.rds")
 dba.plotPCA(t180.dba.counts,attributes = DBA_CONDITION, dotSize = 0.8)
 ```
 
-##### + Exploratory plots of ChIP-seq SUMO
-
-###### PCA plot of log2-normalized counts
-```{r, eval=FALSE}
-sumo.dba <- dba(sampleSheet=sample.diffbind[sample.diffbind$Factor=="SUMO",])
-sumo.dba.counts <- dba.count(sumo.dba)
-```
+###### Exploratory plot of SUMO peaks
 ```{r}
 sumo.dba.counts <- readRDS("../data/sumo.dba.counts.rds")
 dba.plotPCA(sumo.dba.counts,attributes = c(DBA_CONDITION,DBA_TREATMENT), dotSize = 0.8)
@@ -83,8 +78,10 @@ rtracklayer::export.bed(E2ICIpeaks[olap@to,], "../data/E2ICIpeaks-ERE.bed")
 ```
 ##### + Plot tag density heatmap using deepTools2
 Trimmed and sorted bam files were normalized using [deepTools2 version 2.0](https://deeptools.readthedocs.io/en/2.0.0/content/list_of_tools.html)
-Ref:
+(
 [Ramírez, Fidel, Devon P. Ryan, Björn Grüning, Vivek Bhardwaj, Fabian Kilpert, Andreas S. Richter, Steffen Heyne, Friederike Dündar, and Thomas Manke. deepTools2: A next Generation Web Server for Deep-Sequencing Data Analysis. Nucleic Acids Research (2016).](doi:10.1093/nar/gkw257)
+)
+as follow:
 
 ```{bash, eval = FALSE}
 #!/usr/bin/env bash
@@ -116,8 +113,6 @@ plotHeatmap -m ERpeaksERE-chipER-refpoint.gz \
     --sortUsingSamples 1 \
     --colorList 'white,blue'
 ```
-
-
 
 # 3. Study SUMO binding for ChIP-seq ERa peaks
 
@@ -202,12 +197,15 @@ plotHeatmap -m topERpeaks-chipSUMO-refpoint.gz \
 ```
 
 # 4. Reproducibility of SUMO binding for topER peaks
+We used `multiBigwigSummary` from deepTools2 to compute the average scores for each ChIP-seq SUMO sample for the top 5% ERa peaks. 
+
 ```{bash, eval = FALSE}
 multiBigwigSummary BED-file -b V_30_SUMO_N1.norm.bw V_30_SUMO_N2.norm.bw ICI_30_SUMO_N1.norm.bw ICI_30_SUMO_N2.norm.bw ICI_3h_SUMO_N1.norm.bw ICI_3h_SUMO_N2.norm.bw \
 -out topERpeaks-allSUMO-compare.npz \
 --BED ../../data/top-ERa-peaks --outRawCounts ~/Downloads/topERpeaks-allSUMO-compare.tab
 ```
 
+We them imported and plotted the results using ggplot2 R package.
 ```{r}
 corr2 <- read.table("~/Downloads/topERpeaks-allSUMO-compare.tab", sep="\t")
 colnames(corr2) <- c("seqnames", "start", "end", "V_30_SUMO_N1", "V_30_SUMO_N2",
