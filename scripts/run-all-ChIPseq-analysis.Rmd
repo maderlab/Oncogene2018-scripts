@@ -101,7 +101,7 @@ done
 ```{bash, eval = FALSE}
 computeMatrix reference-point \
     -S  V_30_merged.bw E2_30_merged.bw ICI_30_merged.bw ICI_180_merged.bw \
-    -R ~/repositories/mader/chipseq-ICI/data/E2ICIpeaks-ERE.bed \
+    -R ../data/E2ICIpeaks-ERE.bed \
     -b 3000 -a 3000 \
     -o ../../ERpeaksERE-chipER-refpoint.gz \
     --referencePoint center \
@@ -183,7 +183,7 @@ rtracklayer::export.bed(top.ERa.peaks, "../data/top-ERa-peaks.bed")
 ```{bash, eval = FALSE}
 computeMatrix reference-point \
     -S V_30_SUMO_merged.bw ICI_30_SUMO_merged.bw ICI_180_SUMO_merged.bw \
-    -R ~/repositories/mader/chipseq-ICI/data/sel.coord.bed \
+    -R ../data/top-ERa-peaks.bed \
     -b 3000 -a 3000 \
     -o ../../topERpeaks-chipSUMO-refpoint.gz \
     --referencePoint center \
