@@ -110,7 +110,7 @@ computeMatrix reference-point \
 ```{bash, eval = FALSE}
 plotHeatmap -m ERpeaksERE-chipER-refpoint.gz \
     -out heatmap-E2ICIpeaks-ERE-chipER-refpoint.pdf \
-    --sortUsingSamples 1 \
+    --sortUsingSamples 2 \
     --colorList 'white,blue'
 ```
 
@@ -192,7 +192,7 @@ computeMatrix reference-point \
 ```{bash, eval = FALSE}
 plotHeatmap -m topERpeaks-chipSUMO-refpoint.gz \
     -out heatmap-topERpeaks-chipSUMO-refpoint.pdf \
-    --sortUsingSamples 1 \
+    --sortUsingSamples 2 \
     --colorList 'white,blue'
 ```
 
